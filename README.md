@@ -5,6 +5,6 @@ Modulprüfungen (80 % zum Bestehen), Training wie bei der Theorieprüfung, Schlu
 
 - Läuft direkt im Browser, ohne Konto. Installierbar über «Zum Home-Bildschirm», offline nutzbar.
 - Fortschritt wird lokal auf dem Gerät gespeichert.
-- KI-Tutor: optional über einen eigenen Server (`server/`), Adresse in `config.js` eintragen.
+- Optional mit Supabase: Anmeldungen (Name, E-Mail), Fortschritt-Sicherung und KI-Tutor. Einrichtung: `supabase/setup.sql`, Edge Function `supabase/functions/tutor`, Zugangsdaten in `config.js`.
 
 © Voltavia Capital GmbH, Muri AG. Lerninhalte ersetzen keine Rechtsberatung.
