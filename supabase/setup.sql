@@ -1,6 +1,11 @@
 -- Voltavia Learning – Supabase-Einrichtung
 -- 1) Im Supabase-Dashboard: SQL Editor → New query → alles einfügen → Run
--- 2) Authentication → Sign In / Providers → «Allow anonymous sign-ins» einschalten
+-- 2) Authentication → Sign In / Providers → Email: aktiviert lassen («Confirm email» an)
+-- 3) Authentication → Emails → Templates: in «Magic Link» UND «Confirm signup» den Code einfügen, z. B.:
+--      <h2>Dein Code für Voltavia Learning</h2><p style="font-size:28px;letter-spacing:6px"><b>{{ .Token }}</b></p>
+-- 4) Authentication → Emails → SMTP Settings: eigenen Versand einrichten (z. B. Resend) –
+--      der eingebaute Supabase-Versand schickt nur an Team-Mitglieder und nur wenige Mails pro Stunde.
+-- 5) Authentication → URL Configuration → Site URL: https://chrizyboy.github.io/Voltavia-Learning/
 
 create table if not exists public.learners (
   id          uuid primary key references auth.users(id) on delete cascade,

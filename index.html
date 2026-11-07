@@ -7943,41 +7943,81 @@ function sbLoad() {
 }
 async function sbInit() {
   try {
-    const lib = await sbLoad(); if (!lib) return;
+    const lib = await sbLoad(); if (!lib) return false;
     SB.client = lib.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'voltavia-learning-auth' } });
-    await sbSession();
-  } catch (e) { }
+    const { data } = await SB.client.auth.getSession();
+    if (data && data.session) { SB.uid = data.session.user.id; await sbPull(); }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && SB.uid) sbPull(); });
+    render();
+    return true;
+  } catch (e) { return false; }
 }
+SB.init = sbInit();
 async function sbSession() {
   if (!SB.client) return null;
-  let { data } = await SB.client.auth.getSession();
-  if (!data || !data.session) {
-    if (!S.onboarded) return null; // erst nach Profil-Erfassung anmelden
-    const r = await SB.client.auth.signInAnonymously(); if (r.error) return null; data = r.data;
-  }
-  SB.uid = data.session.user.id; SB.token = data.session.access_token;
-  if (!SB.ready) {
-    SB.ready = true;
-    try {
-      const { data: row } = await SB.client.from('learners').select('progress,updated_at').eq('id', SB.uid).maybeSingle();
-      const remote = row && row.progress;
-      if (remote && (remote.updatedAt || 0) > (S.updatedAt || 0)) { S = Object.assign(blank(), remote); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { } applySettings(); render(); }
-      else sbPush(true);
-    } catch (e) { }
-  }
-  return data.session;
+  const { data } = await SB.client.auth.getSession();
+  if (!data || !data.session) { SB.uid = null; return null; }
+  SB.uid = data.session.user.id; return data.session;
+}
+/* Fortschritt zweier Geräte zusammenführen – nichts geht verloren */
+function mergeState(a, b) {
+  const newer = (a.updatedAt || 0) >= (b.updatedAt || 0) ? a : b;
+  const out = Object.assign(blank(), JSON.parse(JSON.stringify(newer)));
+  out.lessons = Object.assign({}, b.lessons || {}, a.lessons || {});
+  out.exams = {};
+  new Set([...Object.keys(a.exams || {}), ...Object.keys(b.exams || {})]).forEach(k => {
+    const x = (a.exams || {})[k], y = (b.exams || {})[k];
+    if (!x || !y) { out.exams[k] = JSON.parse(JSON.stringify(x || y)); return; }
+    out.exams[k] = { attempts: Math.max(x.attempts || 0, y.attempts || 0), best: Math.max(x.best || 0, y.best || 0), passed: !!(x.passed || y.passed), last: ((x.date || '') > (y.date || '') ? x : y).last, date: (x.date || '') > (y.date || '') ? x.date : y.date };
+  });
+  out.q = {};
+  new Set([...Object.keys(a.q || {}), ...Object.keys(b.q || {})]).forEach(k => {
+    const x = (a.q || {})[k], y = (b.q || {})[k];
+    out.q[k] = !x ? y : !y ? x : ((x.t || 0) >= (y.t || 0) ? x : y);
+  });
+  out.days = [...new Set([...(a.days || []), ...(b.days || [])])].sort().slice(-400);
+  const fa = a.final, fb = b.final;
+  out.final = fa && fb ? { passed: !!(fa.passed || fb.passed), best: Math.max(fa.best || 0, fb.best || 0), attempts: Math.max(fa.attempts || 0, fb.attempts || 0), date: fa.passed ? fa.date : fb.date } : (fa || fb || null);
+  out.updatedAt = Math.max(a.updatedAt || 0, b.updatedAt || 0);
+  out.onboarded = true;
+  return out;
+}
+async function sbPull() {
+  if (!SB.client || !SB.uid) return;
+  try {
+    const { data: row } = await SB.client.from('learners').select('name,email,goal,progress').eq('id', SB.uid).maybeSingle();
+    if (row && row.progress) {
+      const merged = mergeState(S, row.progress);
+      if (!merged.profile.name && row.name) merged.profile = { name: row.name, email: row.email || '', goal: row.goal || 'beides' };
+      const changed = JSON.stringify(merged) !== JSON.stringify(S);
+      S = merged; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { }
+      if (changed) { applySettings(); render(); }
+      if (JSON.stringify(merged) !== JSON.stringify(row.progress)) sbPush(true);
+    } else sbPush(true);
+  } catch (e) { }
 }
 function sbPush(now) {
-  if (!SB.client) return;
+  if (!SB.client || !SB.uid) return;
   clearTimeout(SB.t); SB.t = setTimeout(async () => {
     if (SB.busy) { SB.again = true; return; }
     SB.busy = true;
-    try {
-      if (!SB.uid) await sbSession();
-      if (SB.uid) await SB.client.from('learners').upsert({ id: SB.uid, name: S.profile.name, email: S.profile.email, goal: S.profile.goal, progress: S, updated_at: new Date().toISOString() });
-    } catch (e) { }
+    try { await SB.client.from('learners').upsert({ id: SB.uid, name: S.profile.name, email: S.profile.email, goal: S.profile.goal, progress: S, updated_at: new Date().toISOString() }); } catch (e) { }
     SB.busy = false; if (SB.again) { SB.again = false; sbPush(true); }
   }, now ? 50 : 2000);
+}
+async function sbSendCode(email, create) {
+  await SB.init; if (!SB.client) return { error: 'offline' };
+  const { error } = await SB.client.auth.signInWithOtp({ email, options: { shouldCreateUser: !!create } });
+  if (!error) return {};
+  const m = (error.message || '').toLowerCase();
+  if (m.includes('signups not allowed') || m.includes('not found') || error.status === 422 && !create) return { error: 'unknown' };
+  if (error.status === 429 || m.includes('rate')) return { error: 'rate' };
+  return { error: 'send' };
+}
+async function sbVerify(email, code) {
+  const { data, error } = await SB.client.auth.verifyOtp({ email, token: code, type: 'email' });
+  if (error || !data || !data.session) return false;
+  SB.uid = data.session.user.id; return true;
 }
 
 let SAMPLE = null;
@@ -7985,7 +8025,7 @@ const TUTOR_URL = (window.VL_CONFIG && window.VL_CONFIG.tutorUrl) || '';
 if (!TUTOR_URL && CFG.supabaseUrl && CFG.supabaseKey && CFG.tutor !== false) {
   // KI-Tutor über Supabase Edge Function «tutor»
   SAMPLE = async (messages, opts = {}) => {
-    const sess = await sbSession(); if (!sess) throw { code: 'unavailable' };
+    const sess = await sbSession(); if (!sess) throw { code: 'login' };
     const r = await fetch(CFG.supabaseUrl + '/functions/v1/tutor', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sess.access_token, 'apikey': CFG.supabaseKey }, body: JSON.stringify({ messages }), signal: opts.signal });
     if (r.status === 429) throw { code: 'rate_limited' };
     if (!r.ok) throw { code: 'unavailable' };
@@ -8033,7 +8073,7 @@ async function ask(text) {
     const p = $('#pending'); if (p) { p.textContent = res.text; p.removeAttribute('id'); }
     chat.msgs.push({ role: 'assistant', content: res.text });
   } catch (e) {
-    const p = $('#pending'); if (p) { p.textContent = e && e.code === 'rate_limited' ? 'Gerade zu viele Anfragen – bitte in einem Moment nochmals versuchen.' : 'Der Tutor ist im Moment nicht erreichbar.'; p.removeAttribute('id'); }
+    const p = $('#pending'); if (p) { p.textContent = e && e.code === 'rate_limited' ? 'Gerade zu viele Anfragen – bitte in einem Moment nochmals versuchen.' : e && e.code === 'login' ? 'Verbinde dich im Profil mit deiner E-Mail, dann kann ich dir helfen.' : 'Der Tutor ist im Moment nicht erreichbar.'; p.removeAttribute('id'); }
     chat.msgs.pop();
   }
   chat.busy = false;
@@ -8364,7 +8404,9 @@ function vProfil() {
     <div class="li"><span class="iconbtn">${ic('sun', 's')}</span><span class="grow">Darstellung</span><div class="seg">${[['light', 'Hell'], ['dark', 'Dunkel']].map(([k, l]) => `<button class="${(t === 'dark' ? 'dark' : 'light') === k ? 'on' : ''}" data-act="theme" data-v="${k}">${l}</button>`).join('')}</div></div>
     <div class="li"><span class="iconbtn">${ic('type', 's')}</span><span class="grow">Textgrösse</span><div class="seg">${[['s', 'A−'], ['m', 'A'], ['l', 'A+']].map(([k, l]) => `<button class="${sz === k ? 'on' : ''}" data-act="size" data-v="${k}">${l}</button>`).join('')}</div></div>
     <button class="li" data-act="rename"><span class="iconbtn">${ic('user', 's')}</span><span class="grow">Profil ändern<span class="small muted" style="display:block">${esc(S.profile.email || 'E-Mail ergänzen')}</span></span>${ic('chevR', 'chev')}</button>
-    <div class="li"><span class="iconbtn">${ic('cloud', 's')}</span><span class="grow">Fortschritt<span class="small muted" style="display:block">${cloud.ref || SB.uid ? 'Wird automatisch gesichert' : 'Sicher auf diesem Gerät gespeichert – kein Konto nötig'}</span></span><span class="chip ${cloud.ref || SB.uid ? 'good' : ''}">${cloud.ref || SB.uid ? 'Cloud' : 'Lokal'}</span></div>
+    ${SB.uid ? `<div class="li"><span class="iconbtn">${ic('cloud', 's')}</span><span class="grow">Lernstand gesichert<span class="small muted" style="display:block">Auf allen Geräten mit ${esc(S.profile.email || 'deiner E-Mail')} gleich</span></span><span class="chip good">Cloud</span></div><button class="li" data-act="logout"><span class="iconbtn">${ic('door', 's')}</span><span class="grow">Abmelden</span>${ic('chevR', 'chev')}</button>`
+      : HASSB() ? `<button class="li" data-act="connect"><span class="iconbtn" style="background:var(--gold-soft);color:var(--gold-deep)">${ic('cloud', 's')}</span><span class="grow"><b style="font-family:var(--fd)">Lernstand auf allen Geräten</b><span class="small muted" style="display:block">Mit E-Mail-Code verbinden – kein Passwort</span></span>${ic('chevR', 'chev')}</button>`
+      : `<div class="li"><span class="iconbtn">${ic('cloud', 's')}</span><span class="grow">Fortschritt<span class="small muted" style="display:block">${cloud.ref ? 'Wird automatisch gesichert' : 'Auf diesem Gerät gespeichert'}</span></span><span class="chip ${cloud.ref ? 'good' : ''}">${cloud.ref ? 'Cloud' : 'Lokal'}</span></div>`}
     <button class="li" data-act="reset"><span class="iconbtn" style="color:var(--bad)">${ic('refresh', 's')}</span><span class="grow" style="color:var(--bad)">Fortschritt zurücksetzen</span></button>
   </div></div>
   <div class="section"><h3>Über Voltavia Learning</h3><div class="card" style="margin:0 18px;padding:16px" ><p class="small muted" style="margin:0">Lehrgang für Immobilien-Bewirtschaftung und -Vermarktung nach Schweizer Recht – ${MODS.length} Module, ${ALL_LESSONS.length} Lektionen, ${ALLQ.length} Prüfungsfragen, ${GLOSSARY.length} Glossarbegriffe. Inhalte dienen dem Lernen und ersetzen keine Rechtsberatung. Gesetze, Zinssätze und kantonale Regeln ändern sich – im Ernstfall immer die aktuelle Quelle prüfen (fedlex.admin.ch, BWO, Kanton).</p><p class="small faint" style="margin:10px 0 0">© ${new Date().getFullYear()} Voltavia Capital GmbH · Aarauerstrasse 7 · 5630 Muri AG</p></div></div>
@@ -8382,7 +8424,7 @@ function vOnb() {
     <span class="chip gold" style="position:absolute;left:6%;top:18%;box-shadow:var(--shadow)">${ic('book', 's')}${MODS.length} Module</span>
     <span class="chip gold" style="position:absolute;right:4%;top:40%;box-shadow:var(--shadow)">${ic('award', 's')}${ALLQ.length} Prüfungsfragen</span>
     <span class="chip gold" style="position:absolute;left:10%;bottom:14%;box-shadow:var(--shadow)">${ic('target', 's')}Wie die Theorie-App</span>
-  </div><div class="eyebrow">Willkommen</div><h1 style="margin-top:8px">Werde Immobilien-Profi.</h1><p>Der komplette Lehrgang für Bewirtschaftung und Makler in der Schweiz – in deiner Hosentasche.</p>${dots}<button class="btn btn-gold block" data-act="onbNext">Los geht's ${ic('chevR', 's')}</button></div>`;
+  </div><div class="eyebrow">Willkommen</div><h1 style="margin-top:8px">Werde Immobilien-Profi.</h1><p>Der komplette Lehrgang für Bewirtschaftung und Makler in der Schweiz – in deiner Hosentasche.</p>${dots}<button class="btn btn-gold block" data-act="onbNext">Los geht's ${ic('chevR', 's')}</button>${HASSB() ? `<button class="btn btn-outline block" style="margin-top:10px" data-act="onbLogin">Ich lerne schon – Stand laden</button>` : ''}</div>`;
   if (s === 1) return `<div class="onb">${brandBar()}<h1 style="margin-top:20px;font-size:26px">So funktioniert's</h1>
   <div class="feat"><div class="fi">${ic('book')}</div><div><b>${MODS.length} Module, ${ALL_LESSONS.length} Lektionen</b><span>Mit Grafiken, Merkboxen, Praxisfällen und Rechenbeispielen.</span></div></div>
   <div class="feat"><div class="fi">${ic('award')}</div><div><b>Prüfung nach jedem Modul</b><span>Mind. 80 % richtig – erst dann wird das nächste Modul freigeschaltet.</span></div></div>
@@ -8394,8 +8436,44 @@ function vOnb() {
   <label class="small" style="font-family:var(--fd);font-weight:700" for="onbmail">Private E-Mail</label><input id="onbmail" type="email" inputmode="email" placeholder="name@beispiel.ch" value="${esc(ONB.email)}" autocomplete="email">
   <p style="margin:18px 0 4px;font-family:var(--fd);font-weight:700;color:var(--fg)">Dein Ziel</p>
   ${[['beides', 'Bewirtschaftung & Makler', 'Der komplette Weg – empfohlen'], ['bewirtschaftung', 'Bewirtschafter/in', 'Fokus Liegenschaftsverwaltung'], ['makler', 'Makler/in', 'Fokus Verkauf & Vermarktung']].map(([k, t, d]) => `<button class="goalopt ${ONB.goal === k ? 'on' : ''}" data-act="onbGoal" data-v="${k}">${t}<span>${d}</span></button>`).join('')}
-  <p class="small" style="opacity:.7;display:flex;gap:8px;align-items:flex-start">${ic('shield', 's')}<span>Deine Angaben bleiben privat auf diesem Gerät und erscheinen auf deiner Abschlussbestätigung.</span></p>
-  <div style="margin-top:auto"></div>${dots}<button class="btn btn-gold block" data-act="onbDone">${ic('play', 's')}Lehrgang starten</button></div>`;
+  <p class="small" style="opacity:.8;display:flex;gap:8px;align-items:flex-start">${ic('shield', 's')}<span>${HASSB() ? 'Wir schicken dir einen 6-stelligen Code per E-Mail – kein Passwort nötig. Mit derselben E-Mail hast du deinen Stand auf jedem Gerät.' : 'Deine Angaben bleiben privat auf diesem Gerät und erscheinen auf deiner Abschlussbestätigung.'}</span></p>
+  <div style="margin-top:auto"></div>${dots}<button class="btn btn-gold block" data-act="onbDone" ${ONB.busy ? 'disabled' : ''}>${ONB.busy ? 'Code wird gesendet …' : (HASSB() ? ic('send', 's') + 'Code per E-Mail erhalten' : ic('play', 's') + 'Lehrgang starten')}</button></div>`;
+}
+function vOnbCode() {
+  return `<div class="onb">${brandBar()}<div style="margin:auto 0 0"></div>
+  <div style="width:72px;height:72px;border-radius:22px;background:var(--gold-soft);color:var(--gold-deep);display:grid;place-items:center;margin-bottom:18px">${ic('send', 'l')}</div>
+  <h1 style="font-size:26px;margin-top:0">Code eingeben</h1>
+  <p style="margin:6px 0 14px">Wir haben dir einen Code an <b style="color:var(--fg)">${esc(ONB.email)}</b> geschickt. Schau auch im Spam-Ordner nach.</p>
+  <input id="onbcode" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456" style="font-size:28px;letter-spacing:.35em;text-align:center;font-family:var(--fd);font-weight:800">
+  <button class="btn btn-gold block" style="margin-top:8px" data-act="onbVerify" ${ONB.busy ? 'disabled' : ''}>${ONB.busy ? 'Wird geprüft …' : ic('check', 's') + 'Bestätigen'}</button>
+  <div style="display:flex;justify-content:space-between;gap:10px;margin-top:16px"><button class="linkbtn" data-act="onbResend">Code erneut senden</button><button class="linkbtn" data-act="onbBack">E-Mail ändern</button></div>
+  <div style="margin-bottom:auto"></div>
+  ${ONB.login ? '' : `<button class="linkbtn" style="color:var(--fg-muted);margin-top:24px" data-act="onbLocal">Ohne E-Mail-Bestätigung starten (nur auf diesem Gerät)</button>`}</div>`;
+}
+function vOnbLogin() {
+  return `<div class="onb">${brandBar()}<div style="margin:auto 0 0"></div>
+  <h1 style="font-size:26px;margin-top:0">${ONB.connect ? 'Mit E-Mail verbinden' : 'Willkommen zurück'}</h1>
+  <p style="margin:6px 0 14px">${ONB.connect ? 'Danach ist dein Lernstand gesichert und auf allen deinen Geräten gleich.' : 'Gib deine E-Mail ein – wir schicken dir einen Code und laden deinen Lernstand.'}</p>
+  <label class="small" style="font-family:var(--fd);font-weight:700" for="onbmail">E-Mail</label><input id="onbmail" type="email" inputmode="email" placeholder="name@beispiel.ch" value="${esc(ONB.email)}" autocomplete="email">
+  <button class="btn btn-gold block" style="margin-top:8px" data-act="onbLoginSend" ${ONB.busy ? 'disabled' : ''}>${ONB.busy ? 'Code wird gesendet …' : ic('send', 's') + 'Code senden'}</button>
+  <button class="linkbtn" style="margin-top:16px" data-act="onbCancel">Zurück</button><div style="margin-bottom:auto"></div></div>`;
+}
+const HASSB = () => !!(CFG.supabaseUrl && CFG.supabaseKey);
+async function sendCode(create) {
+  ONB.busy = true; render();
+  const r = await sbSendCode(ONB.email, create);
+  ONB.busy = false;
+  if (r.error === 'offline') { toast('Keine Verbindung – du kannst lokal starten', 'info'); render(); return false; }
+  if (r.error === 'unknown') { toast('Zu dieser E-Mail gibt es noch keinen Lernstand', 'info'); render(); return false; }
+  if (r.error === 'rate') { toast('Bitte warte kurz und versuche es nochmals', 'info'); render(); return false; }
+  if (r.error) { toast('Code konnte nicht gesendet werden', 'alert'); render(); return false; }
+  ONB.step = 'code'; render(); setTimeout(() => { const c = $('#onbcode'); if (c) c.focus(); }, 100); return true;
+}
+function finishOnb() {
+  if (!ONB.login && !ONB.connect) S.profile = { name: ONB.name, email: ONB.email, goal: ONB.goal };
+  if (ONB.connect) S.profile.email = ONB.email;
+  S.onboarded = true; const was = ONB; ONB = { step: 0, name: '', email: '', goal: 'beides' };
+  save(); go(was.connect ? 'profil' : 'start'); render();
 }
 
 /* ---------- Render ---------- */
@@ -8404,7 +8482,7 @@ function render() {
   const r = route(); checkSeq = 0; for (const k in CHECKS) delete CHECKS[k];
   let html;
   if (S.onboarded && !S.profile.email && !ONB.asked) { ONB = { step: 2, name: S.profile.name, email: '', goal: S.profile.goal, asked: true }; S.onboarded = false; }
-  if (!S.onboarded) html = vOnb();
+  if (!S.onboarded) html = ONB.step === 'code' ? vOnbCode() : ONB.step === 'login' ? vOnbLogin() : vOnb();
   else switch (r.v) {
     case 'home': html = vHome(); break;
     case 'kurs': html = vKurs(); break;
@@ -8501,13 +8579,42 @@ document.addEventListener('click', ev => {
       ONB.name = (n ? n.value : ONB.name).trim(); ONB.email = (e ? e.value : ONB.email).trim();
       if (ONB.name.length < 2) { n && n.focus(); toast('Bitte gib deinen Namen ein', 'info'); return; }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(ONB.email)) { e && e.focus(); toast('Bitte gib eine gültige E-Mail ein', 'info'); return; }
-      S.profile = { name: ONB.name, email: ONB.email, goal: ONB.goal }; S.onboarded = true; save(); go('start'); render(); break;
+      ONB.login = false; ONB.connect = false;
+      if (HASSB() && !(SB.uid && ONB.email === S.profile.email)) { (async () => { await SB.init; if (SB.client) sendCode(true); else finishOnb(); })(); }
+      else finishOnb();
+      break;
     }
+    case 'onbLogin': ONB = { step: 'login', name: '', email: '', goal: 'beides', login: true }; render(); break;
+    case 'onbCancel': { const c = ONB.connect; ONB = { step: 0, name: '', email: '', goal: 'beides' }; if (c) { S.onboarded = true; go('profil'); } render(); break; }
+    case 'onbBack': ONB.step = ONB.login || ONB.connect ? 'login' : 2; render(); break;
+    case 'onbLoginSend': {
+      const e = $('#onbmail'); ONB.email = (e ? e.value : '').trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(ONB.email)) { e && e.focus(); toast('Bitte gib eine gültige E-Mail ein', 'info'); return; }
+      (async () => { await SB.init; if (!SB.client) { toast('Keine Verbindung zum Server', 'info'); return; } sendCode(!!ONB.connect); })();
+      break;
+    }
+    case 'onbResend': sendCode(!ONB.login).then(ok => ok && toast('Neuer Code gesendet', 'send')); break;
+    case 'onbLocal': SB.uid = null; finishOnb(); break;
+    case 'onbVerify': {
+      const c = $('#onbcode'); const code = (c ? c.value : '').replace(/\D/g, '');
+      if (code.length < 6) { c && c.focus(); toast('Bitte gib den Code aus der E-Mail ein', 'info'); return; }
+      (async () => {
+        ONB.busy = true; render(); const ok = await sbVerify(ONB.email, code); ONB.busy = false;
+        if (!ok) { render(); toast('Code ungültig oder abgelaufen', 'alert'); return; }
+        if (!ONB.login && !ONB.connect) S.profile = { name: ONB.name, email: ONB.email, goal: ONB.goal };
+        if (ONB.connect) S.profile.email = ONB.email;
+        S.onboarded = true; await sbPull(); toast(ONB.login ? 'Lernstand geladen' : 'Bestätigt – dein Stand wird gesichert', 'cloud');
+        finishOnb();
+      })();
+      break;
+    }
+    case 'connect': ONB = { step: 'login', email: S.profile.email || '', connect: true }; S.onboarded = false; render(); break;
+    case 'logout': modal('Abmelden?', 'Dein Lernstand bleibt in deinem Konto gespeichert. Auf diesem Gerät wird er entfernt – mit deiner E-Mail und einem Code holst du ihn jederzeit zurück.', [{ label: 'Abmelden', cls: 'btn-outline', fn: async () => { try { await SB.client.auth.signOut(); } catch (e) { } SB.uid = null; S = blank(); try { localStorage.removeItem(KEY); } catch (e) { } ONB = { step: 0, name: '', email: '', goal: 'beides' }; go('start'); render(); } }, { label: 'Abbrechen', cls: 'btn-gold' }]); break;
   }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && layer().innerHTML) { if (chat && chat.ctrl) try { chat.ctrl.abort(); } catch (x) { } chat = null; closeLayer(); } });
 
-applySettings(); render(); initCloud(); sbInit();
+applySettings(); render(); initCloud();
 try { if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && document.querySelector('link[rel=manifest]')) navigator.serviceWorker.register('sw.js').catch(() => { }); } catch (e) { }
 })();
 
