@@ -1,8 +1,8 @@
 /* Voltavia Learning – Konfiguration
-   supabaseUrl / supabaseKey: aus Supabase → Project Settings → API (Project URL + anon/publishable key).
-   Leer lassen = alles bleibt nur lokal auf dem Gerät, KI-Tutor ausgeblendet. */
+   supabaseUrl / supabaseKey: Supabase Project URL + Publishable Key (öffentlich, darf in der App stehen).
+   Niemals den Secret Key hier eintragen. */
 window.VL_CONFIG = {
-  supabaseUrl: '',
-  supabaseKey: '',
+  supabaseUrl: 'https://eolpibvbfqznlftogkhg.supabase.co',
+  supabaseKey: 'sb_publishable_ZTkLMoSy5J-WwoNzBm9hfA_ojZ_6yiY',
   tutor: true
 };
