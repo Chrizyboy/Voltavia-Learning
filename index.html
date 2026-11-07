@@ -381,6 +381,56 @@ svg text{font-family:var(--fd)}
 .onbdots i.on{background:var(--gold)}
 :root[data-theme="dark"] .hero,:root[data-theme="dark"] .onb{background:var(--app)}
 :root[data-theme="dark"] .brandname b{color:#fff}
+
+/* ===== Desktop-Version ===== */
+.tb-brand,.tb-foot,.deskstat{display:none}
+.tabbar.deskonly{display:none}
+@media (min-width:1024px){
+  body{background:#FFFFFF}
+  #app{max-width:none;box-shadow:none}
+  body.hasnav #app{padding-left:264px}
+  .scr{width:100%;max-width:1120px;margin:0 auto;padding-bottom:120px}
+  .scr.nobar{padding-bottom:130px}
+  .tabbar,.tabbar.deskonly{display:flex;flex-direction:column;gap:4px;top:0;bottom:0;left:0;transform:none;width:264px;max-width:none;padding:28px 18px 24px;border-top:0;border-right:1px solid var(--line);background:linear-gradient(180deg,#FBF7F0,#FFFFFF 60%)}
+  .tb-brand{display:flex;align-items:center;gap:10px;margin:0 6px 28px}
+  .tab{flex-direction:row;justify-content:flex-start;gap:12px;font-size:15px;padding:12px 14px;color:var(--fg-muted)}
+  .tab:hover{background:var(--surface-2)}
+  .tab.on{background:var(--gold-soft);color:var(--fg)}
+  .tb-foot{display:block;margin-top:auto;padding:0 8px}
+  .hero{border-radius:0 0 32px 32px;padding:34px 40px 40px}
+  .hero .brand{display:none}
+  .hero h2{font-size:34px}
+  .ringwrap{max-width:560px}
+  .continue{margin:-22px 40px 0;width:calc(100% - 80px)}
+  .section>h3,.trackhead{margin-left:40px;margin-right:40px}
+  .pad,.grid2,.modes,.leitner,.leitlab{padding-left:40px;padding-right:40px}
+  .grid2{grid-template-columns:repeat(4,1fr)}
+  .deskstat{display:block}
+  .reader .fig svg{max-width:600px;margin:0 auto}
+  .tip,.list,.goals,.examcard,.search,.gl,.gl-letter,.reviewitem,.qcard,.cert{margin-left:40px;margin-right:40px}
+  .card[style*="margin:0 18px"]{margin-left:40px!important;margin-right:40px!important}
+  .modes{grid-template-columns:1fr 1fr}
+  .path{padding:0 40px;display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
+  .path:before{display:none}
+  .mod{margin:0}
+  .mod .node{left:auto;right:14px;top:14px;width:28px;height:28px}
+  .mod .row{padding-right:34px}
+  .modhero{padding:28px 40px 6px}
+  .reader{max-width:780px;margin:0 auto;padding:10px 24px 0}
+  .reader h2.lt{font-size:32px}
+  .qcard,.exhead{max-width:780px;margin-left:auto;margin-right:auto}
+  .exhead{padding:14px 0 0}
+  .result{max-width:780px;margin:0 auto}
+  .section .reviewitem{max-width:780px;margin-left:auto;margin-right:auto}
+  .bottomcta{left:264px;right:0;width:auto;max-width:none;transform:none;padding-left:max(24px,calc((100vw - 264px - 780px)/2));padding-right:max(24px,calc((100vw - 264px - 780px)/2))}
+  .fab{right:40px;bottom:110px}
+  .topbar{padding:14px 24px}
+  .onb{max-width:560px;margin:0 auto;min-height:100vh;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+  .sheet{left:calc(50% + 132px)}
+  .modal{left:calc(50% + 132px)}
+  .cmp{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+}
+@media (min-width:1024px) and (max-width:1200px){ .grid2{grid-template-columns:repeat(2,1fr)} }
 </style>
 </head>
 <body>
@@ -8029,7 +8079,7 @@ function checkInner(id) {
 /* ---------- Views ---------- */
 function tabbar(active) {
   const t = [['start', 'home', 'Start'], ['kurs', 'book', 'Kurs'], ['training', 'target', 'Training'], ['glossar', 'search', 'Glossar'], ['profil', 'user', 'Profil']];
-  return `<nav class="tabbar" aria-label="Hauptnavigation">${t.map(([h, i, l]) => `<button class="tab ${active === h ? 'on' : ''}" data-go="${h}" ${active === h ? 'aria-current="page"' : ''}>${ic(i)}${l}</button>`).join('')}</nav>`;
+  return `<nav class="tabbar" aria-label="Hauptnavigation"><div class="tb-brand">${logo(34, false)}<div class="brandname"><b>VOLTAVIA</b><span>LEARNING</span></div></div>${t.map(([h, i, l]) => `<button class="tab ${active === h ? 'on' : ''}" data-go="${h}" ${active === h ? 'aria-current="page"' : ''}>${ic(i)}${l}</button>`).join('')}<div class="tb-foot"><div class="small muted" style="font-family:var(--fd);font-weight:700">Fortschritt ${overall()} %</div><div class="bar"><i style="width:${overall()}%"></i></div><div class="small faint" style="margin-top:14px">© Voltavia Capital GmbH</div></div></nav>`;
 }
 function ring(p, size = 96, stroke = 9, col = '#B08D57', bg = '#EEF1F7') {
   const r = (size - stroke) / 2, c = 2 * Math.PI * r;
@@ -8061,6 +8111,8 @@ function vHome() {
     <div class="grid2">
       <div class="card stat">${ic('target')}<div class="v">${mastered()}</div><div class="l">von ${ALLQ.length} Fragen gemeistert</div></div>
       <div class="card stat">${ic('award')}<div class="v">${avgScore()}%</div><div class="l">Ø Prüfungsresultat</div></div>
+      <div class="card stat deskstat">${ic('book')}<div class="v">${lessonsDone}</div><div class="l">von ${ALL_LESSONS.length} Lektionen erledigt</div></div>
+      <div class="card stat deskstat">${ic('flame')}<div class="v">${streak()}</div><div class="l">Tage Lernserie</div></div>
     </div></div>
   ${tip ? `<div class="section"><h3>Wissen des Tages</h3><div class="card tip"><div class="eyebrow" style="margin-bottom:6px">${ic('bulb', 's')} ${esc(tip.l._m.title)}</div><div>${md(tip.b.x)}</div></div></div>` : ''}
   <div class="section"><h3>Lernpfad <a href="#kurs">Alle Module</a></h3>${Object.keys(TRACKS).map(k => trackSummary(k)).join('')}</div>
@@ -8381,7 +8433,12 @@ function render() {
     case 'profil': html = vProfil(); break;
     default: html = vHome();
   }
+  if (S.onboarded && html.indexOf('class="tabbar"') < 0) {
+    const map = { lesson: 'kurs', mod: 'kurs', exam: 'kurs', schluss: 'kurs', zertifikat: 'kurs', practice: 'training', sim: 'training' };
+    html += tabbar(map[r.v] || 'start').replace('class="tabbar"', 'class="tabbar deskonly"');
+  }
   $('#app').innerHTML = html;
+  document.body.classList.toggle('hasnav', S.onboarded);
   if (EX && !EX.done && $('#timer')) tickTimer();
   const gs = $('#gsearch'); if (gs) gs.oninput = () => { gq = gs.value; $('#glist').innerHTML = glossList(); };
   const rp = $('#rp'); if (rp) onScroll();
