@@ -14787,7 +14787,9 @@ const isReq = m => !m.optional || EXTRAS().includes(m.track);
 const FINAL_N_ = () => 50 + 10 * EXTRAS().length, FINAL_MIN_ = () => 60 + 12 * EXTRAS().length;
 const allPassed = () => REQ().every(examPassed);
 const trackDone = k => OPT[k] && OPT[k].length && OPT[k].every(examPassed);
-const mastered = () => ALLQ.filter(q => (S.q[q.id] && S.q[q.id].box >= 3)).length;
+const REQ_Q = () => REQ().flatMap(m => m.exam.questions);
+const mastered = () => REQ_Q().filter(q => (S.q[q.id] && S.q[q.id].box >= 3)).length;
+const OPT_N = () => OPT_ORDER.reduce((a, k) => a + OPT[k].length, 0);
 function overall() {
   const R = REQ(), RL = REQ_LESSONS();
   const total = RL.length + R.length;
@@ -14835,9 +14837,9 @@ function route() {
   if (!h || h === 'start') return { v: 'home' };
   if (['kurs', 'training', 'glossar', 'profil', 'schluss', 'zertifikat', 'admin'].includes(h)) return { v: h };
   let m;
-  if ((m = h.match(/^(m\d\d)$/))) return { v: 'mod', id: m[1] };
-  if ((m = h.match(/^(m\d\d)l(\d+)$/))) return { v: 'lesson', id: h, mid: m[1] };
-  if ((m = h.match(/^pruefung-(m\d\d)$/))) return { v: 'exam', id: m[1] };
+  if ((m = h.match(/^([mht]\d\d)$/))) return { v: 'mod', id: m[1] };
+  if ((m = h.match(/^([mht]\d\d)l(\d+)$/))) return { v: 'lesson', id: h, mid: m[1] };
+  if ((m = h.match(/^pruefung-([mht]\d\d)$/))) return { v: 'exam', id: m[1] };
   if (h === 'ueben') return { v: 'practice' };
   if (h === 'simulation') return { v: 'sim' };
   return { v: 'home' };
@@ -15106,7 +15108,7 @@ function vHome() {
   ${cont}
   <div class="section"><h3>Deine Statistik</h3>
     <div class="grid2">
-      <div class="card stat">${ic('target')}<div class="v">${mastered()}</div><div class="l">von ${ALLQ.length} Fragen gemeistert</div></div>
+      <div class="card stat">${ic('target')}<div class="v">${mastered()}</div><div class="l">von ${REQ_Q().length} Fragen gemeistert</div></div>
       <div class="card stat">${ic('award')}<div class="v">${avgScore()}%</div><div class="l">Ø Prüfungsresultat</div></div>
       <div class="card stat deskstat">${ic('book')}<div class="v">${lessonsDone}</div><div class="l">von ${REQ_LESSONS().length} Lektionen erledigt</div></div>
       <div class="card stat deskstat">${ic('flame')}<div class="v">${streak()}</div><div class="l">Tage Lernserie</div></div>
@@ -15130,9 +15132,9 @@ function vKurs() {
     const ms = MAIN.filter(m => m.track === k); if (!ms.length) return '';
     return `<div class="track"><div class="trackhead"><div class="tb">${k}</div><div><h3>${TRACKS[k].name}</h3><div class="pp">${TRACKS[k].desc}</div></div></div><div class="path">${ms.map(modCard).join('')}</div></div>`;
   }).join('')}
-  <div class="track"><div class="trackhead"><div class="tb">${ic('trophy', 's')}</div><div><h3>Schlussprüfung</h3><div class="pp">${FINAL_N_()} Fragen aus allen Modulen · ${FINAL_MIN_()} Min.</div></div></div>
+  <div class="track"><div class="trackhead"><div class="tb">${ic('trophy', 's')}</div><div><h3>Schlussprüfung</h3><div class="pp">${FINAL_N_()} Fragen aus deinen ${REQ().length} Pflichtmodulen · ${FINAL_MIN_()} Min.</div></div></div>
   <div class="path"><button class="mod ${allPassed() ? (S.final && S.final.passed ? 'done' : 'open') : 'locked'}" data-go="schluss"><span class="node">${allPassed() ? ic(S.final && S.final.passed ? 'check' : 'trophy', 's') : ic('lock', 's')}</span><div class="row"><div class="mi">${ic('trophy')}</div><div style="flex:1"><h4>Schlussprüfung & Abschlussbestätigung</h4><div class="sub">${allPassed() ? 'Freigeschaltet' : 'Wird nach allen Modulprüfungen freigeschaltet'}</div></div></div></button></div></div>
-  ${OPT_ORDER.some(k => OPT[k].length) ? `<div class="optsep"><div class="eyebrow">Optional</div><h3>Zusatzlehrgänge</h3><p class="small muted" style="margin:4px 0 0">Jederzeit offen. Zusatzlehrgänge, die du gewählt hast, zählen für deine Schlussprüfung – die anderen sind freiwillig. Auswahl ändern: Profil → Profil ändern.</p></div>` : ''}
+  ${OPT_ORDER.some(k => OPT[k].length) ? `<div class="optsep"><div class="eyebrow">Optional</div><h3>Zusatzlehrgänge</h3><p class="small muted" style="margin:4px 0 0">Du kannst jederzeit damit beginnen. Zusatzlehrgänge, die du gewählt hast, zählen für deine Schlussprüfung – die anderen sind freiwillig. Auswahl ändern: Profil → Profil ändern.</p></div>` : ''}
   ${OPT_ORDER.filter(k => OPT[k].length).map(k => `<div class="track"><div class="trackhead"><div class="tb" style="background:var(--gold);color:#fff">${k}</div><div><h3>${TRACKS[k].name} ${EXTRAS().includes(k) ? `<span class="chip good" style="vertical-align:middle;margin-left:4px">${ic('check', 's')}in deiner Schlussprüfung</span>` : `<span class="chip gold" style="vertical-align:middle;margin-left:4px">optional</span>`}</h3><div class="pp">${OPT[k].length} Module${trackDone(k) ? ' · abgeschlossen ✓' : ''}</div></div></div><div class="path">${OPT[k].map(modCard).join('')}</div></div>`).join('')}
   </div>${tabbar('kurs')}`;
 }
@@ -15360,7 +15362,7 @@ function glossList() {
 /* ---------- Profil ---------- */
 function vProfil() {
   const t = S.settings.theme, sz = S.settings.size || 'm';
-  return `<div class="scr"><header class="hero" style="padding-bottom:22px">${brandBar()}<div style="display:flex;gap:14px;align-items:center"><div style="width:60px;height:60px;border-radius:20px;background:rgba(201,168,106,.2);display:grid;place-items:center;font-family:var(--fd);font-weight:800;font-size:24px;color:#C9A86A">${esc((S.profile.name || '?')[0].toUpperCase())}</div><div><h2 style="font-size:22px">${esc(S.profile.name || 'Dein Profil')}</h2><p style="margin:2px 0 0">Ziel: ${esc({ bewirtschaftung: 'Bewirtschafter/in', makler: 'Makler/in', beides: 'Bewirtschaftung & Makler' }[S.profile.goal] || '')}</p></div></div></header>
+  return `<div class="scr"><header class="hero" style="padding-bottom:22px">${brandBar()}<div style="display:flex;gap:14px;align-items:center"><div style="width:60px;height:60px;border-radius:20px;background:rgba(201,168,106,.2);display:grid;place-items:center;font-family:var(--fd);font-weight:800;font-size:24px;color:#C9A86A">${esc((S.profile.name || '?')[0].toUpperCase())}</div><div><h2 style="font-size:22px">${esc(S.profile.name || 'Dein Profil')}</h2><p style="margin:2px 0 0">Ziel: ${esc({ bewirtschaftung: 'Bewirtschafter/in', makler: 'Makler/in', beides: 'Bewirtschaftung & Makler' }[S.profile.goal] || '')}${EXTRAS().length ? ' · Zusatz: ' + EXTRAS().map(k => TRACKS[k].name).join(' & ') : ''}</p></div></div></header>
   ${SB.isAdmin ? `<div class="section pad"><button class="card modebtn navy" data-go="admin"><div class="mi">${ic('users')}</div><div style="flex:1"><h4>Admin-Übersicht</h4><p>Alle Lernenden, Fortschritt und gewählte Lehrgänge</p></div>${ic('chevR', 'chev')}</button></div>` : ''}
   <div class="section"><h3>Prüfungsresultate</h3><div class="card list">${MODS.map(m => { const e = S.exams[m.id]; return `<button class="li" data-go="${m.id}"><span class="chip ${e && e.passed ? 'good' : e ? 'bad' : ''}" style="min-width:52px;justify-content:center">${e ? e.best + '%' : '–'}</span><span class="grow"><b style="font-family:var(--fd);font-size:14.5px">${m.dn}. ${esc(m.title)}</b><span class="small muted" style="display:block">${e ? e.attempts + ' Versuch' + (e.attempts > 1 ? 'e' : '') : 'noch nicht geprüft'}</span></span>${ic('chevR', 'chev')}</button>`; }).join('')}</div></div>
   <div class="section"><h3>Einstellungen</h3><div class="card list">
@@ -15372,7 +15374,7 @@ function vProfil() {
       : `<div class="li"><span class="iconbtn">${ic('cloud', 's')}</span><span class="grow">Fortschritt<span class="small muted" style="display:block">${cloud.ref ? 'Wird automatisch gesichert' : 'Auf diesem Gerät gespeichert'}</span></span><span class="chip ${cloud.ref ? 'good' : ''}">${cloud.ref ? 'Cloud' : 'Lokal'}</span></div>`}
     <button class="li" data-act="reset"><span class="iconbtn" style="color:var(--bad)">${ic('refresh', 's')}</span><span class="grow" style="color:var(--bad)">Fortschritt zurücksetzen</span></button>
   </div></div>
-  <div class="section"><h3>Über Voltavia Learning</h3><div class="card" style="margin:0 18px;padding:16px" ><p class="small muted" style="margin:0">Lehrgang für Immobilien-Bewirtschaftung und -Vermarktung nach Schweizer Recht – ${MAIN.length} Module plus Zusatzlehrgänge, ${ALL_LESSONS.length} Lektionen, ${ALLQ.length} Prüfungsfragen, ${GLOSSARY.length} Glossarbegriffe. Inhalte dienen dem Lernen und ersetzen keine Rechtsberatung. Gesetze, Zinssätze und kantonale Regeln ändern sich – im Ernstfall immer die aktuelle Quelle prüfen (fedlex.admin.ch, BWO, Kanton).</p><p class="small faint" style="margin:10px 0 0">© ${new Date().getFullYear()} Voltavia Capital GmbH · Aarauerstrasse 7 · 5630 Muri AG</p></div></div>
+  <div class="section"><h3>Über Voltavia Learning</h3><div class="card" style="margin:0 18px;padding:16px" ><p class="small muted" style="margin:0">Lehrgang für Immobilien-Bewirtschaftung und -Vermarktung nach Schweizer Recht – ${MODS.length} Module (${MAIN.length} im Hauptlehrgang, ${OPT_N()} in den Zusatzlehrgängen), ${ALL_LESSONS.length} Lektionen, ${ALLQ.length} Prüfungsfragen, ${GLOSSARY.length} Glossarbegriffe. Inhalte dienen dem Lernen und ersetzen keine Rechtsberatung. Gesetze, Zinssätze und kantonale Regeln ändern sich – im Ernstfall immer die aktuelle Quelle prüfen (fedlex.admin.ch, BWO, Kanton).</p><p class="small faint" style="margin:10px 0 0">© ${new Date().getFullYear()} Voltavia Capital GmbH · Aarauerstrasse 7 · 5630 Muri AG</p></div></div>
   </div>${tabbar('profil')}`;
 }
 
@@ -15454,11 +15456,11 @@ function vOnb() {
     <span class="chip gold" style="position:absolute;left:10%;bottom:14%;box-shadow:var(--shadow)">${ic('target', 's')}Wie die Theorie-App</span>
   </div><div class="eyebrow">Willkommen</div><h1 style="margin-top:8px">Werde Immobilien-Profi.</h1><p>Der komplette Lehrgang für Bewirtschaftung und Makler in der Schweiz – in deiner Hosentasche.</p>${dots}<button class="btn btn-gold block" data-act="onbNext">Los geht's ${ic('chevR', 's')}</button>${HASSB() ? `<button class="btn btn-outline block" style="margin-top:10px" data-act="onbLogin">Ich lerne schon – Stand laden</button>` : ''}</div>`;
   if (s === 1) return `<div class="onb">${brandBar()}<h1 style="margin-top:20px;font-size:26px">So funktioniert's</h1>
-  <div class="feat"><div class="fi">${ic('book')}</div><div><b>${MAIN.length} Module, ${MAIN_LESSONS.length} Lektionen</b><span>Mit Grafiken, Merkboxen, Praxisfällen und Rechenbeispielen.</span></div></div>
+  <div class="feat"><div class="fi">${ic('book')}</div><div><b>${MODS.length} Module, ${ALL_LESSONS.length} Lektionen</b><span>Hauptlehrgang ${MAIN.length} Module, Zusatzlehrgänge ${OPT_N()} Module – mit Grafiken, Merkboxen, Praxisfällen und Rechenbeispielen.</span></div></div>
   <div class="feat"><div class="fi">${ic('award')}</div><div><b>Prüfung nach jedem Modul</b><span>Mind. 80 % richtig – erst dann wird das nächste Modul freigeschaltet.</span></div></div>
   <div class="feat"><div class="fi">${ic('target')}</div><div><b>Training wie für die Theorieprüfung</b><span>Lernkartei, Fehler wiederholen, Prüfungssimulation mit Timer.</span></div></div>
-  <div class="feat"><div class="fi">${ic('trophy')}</div><div><b>Schlussprüfung</b><span>${FINAL_N_()} Fragen über alles – mit Abschlussbestätigung.</span></div></div>
-  ${OPT_ORDER.some(k => OPT[k].length) ? `<div class="feat"><div class="fi">${ic('layers')}</div><div><b>Zusatzlehrgänge (optional)</b><span>${OPT_ORDER.filter(k => OPT[k].length).map(k => TRACKS[k].name).join(' und ')} – freiwillig, jederzeit offen.</span></div></div>` : ''}
+  <div class="feat"><div class="fi">${ic('trophy')}</div><div><b>Schlussprüfung</b><span>50 Fragen zum Hauptlehrgang, +10 je gewähltem Zusatzlehrgang – mit Abschlussbestätigung.</span></div></div>
+  ${OPT_ORDER.some(k => OPT[k].length) ? `<div class="feat"><div class="fi">${ic('layers')}</div><div><b>Zusatzlehrgänge (optional)</b><span>${OPT_ORDER.filter(k => OPT[k].length).map(k => TRACKS[k].name + ' (' + OPT[k].length + ' Module)').join(' und ')} – frei wählbar. Was du wählst, zählt für deine Schlussprüfung.</span></div></div>` : ''}
   <div style="margin-top:auto"></div>${dots}<button class="btn btn-gold block" data-act="onbNext">Weiter ${ic('chevR', 's')}</button></div>`;
   return `<div class="onb">${brandBar()}<h1 style="margin-top:20px;font-size:26px">Dein Profil</h1><p style="margin:6px 0 10px">Kein Konto, kein Passwort – nur kurz deine Angaben.</p>
   <label class="small" style="font-family:var(--fd);font-weight:700" for="onbname">Vor- und Nachname</label><input id="onbname" placeholder="z. B. Chris Rosenberg" value="${esc(ONB.name)}" autocomplete="name">
