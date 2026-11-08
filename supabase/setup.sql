@@ -33,3 +33,15 @@ select name, email, goal, created_at, updated_at,
        (select count(*) from jsonb_object_keys(coalesce(progress->'lessons','{}'::jsonb))) as lektionen_erledigt,
        (select count(*) from jsonb_each(coalesce(progress->'exams','{}'::jsonb)) e where (e.value->>'passed')::boolean) as pruefungen_bestanden
 from public.learners order by updated_at desc;
+
+-- ===== Admin-Zugriff (Übersicht aller Lernenden in der App) =====
+create table if not exists public.admins (email text primary key);
+alter table public.admins enable row level security;
+drop policy if exists "admins_self" on public.admins;
+create policy "admins_self" on public.admins for select to authenticated
+  using (lower(email) = lower(auth.jwt() ->> 'email'));
+drop policy if exists "learners_admin_read" on public.learners;
+create policy "learners_admin_read" on public.learners for select to authenticated
+  using (exists (select 1 from public.admins a where lower(a.email) = lower(auth.jwt() ->> 'email')));
+-- Eigene E-Mail als Admin eintragen (anpassen!):
+-- insert into public.admins (email) values ('deine@email.ch');
